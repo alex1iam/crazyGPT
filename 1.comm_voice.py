@@ -95,10 +95,6 @@ def voce_listen():
                 if res:
                     print(f"Фраза целиком: {res}")
                     process_command(res)  # Обработка команды при распознавании
-            else:
-                res = json.loads(rec.PartialResult())["partial"]
-                if res:
-                    print(f"Поток: {res}")
 
 if __name__ == "__main__":
     # Подключаемся к MQTT брокеру и запускаем цикл обработки сообщений
