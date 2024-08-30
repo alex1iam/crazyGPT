@@ -112,9 +112,9 @@ def subscribe_to_status_topics():
             mqtt_client.subscribe(status_topic)
             print(f"Подписались на статус топик: {status_topic}")
 
-
 def on_message(client, userdata, message):
     topic = message.topic
+
     payload = message.payload.decode('utf-8')
 
     print(f"Получено сообщение на топик {topic}: {payload}")
@@ -138,7 +138,7 @@ def parse_command(command):
         if score_name > SIM_NAME and score_location > SIM_LOCATION:
             device_name = device_info.name
             location = device_info.location
-            print(f"Найдено устройство: {device_name} в {location} (score_name: {score_name}, score_location: {score>
+            print(f"Найдено устройство: {device_name} в {location} (score_name: {score_name}, score_location: {score_location})")
 
             # Проверяем команды
             for command_key, command_options in device_info.commands.items():
@@ -150,7 +150,7 @@ def parse_command(command):
                                 score_action = fuzz.partial_ratio(synonym, command.lower())
                                 if score_action > SIM_ACTION:
                                     action = action_value  # Устанавливаем действие
-                                    full_topic = f"{device_info.main_topic}{command_key}{device_info.sending}"  # По>
+                                    full_topic = f"{device_info.main_topic}{command_key}{device_info.sending}"  # Полный топик
                                     print(f"command_key: {command_key}, score_action: {score_action}")
                                     return device_name, location, full_topic, action
 
@@ -170,9 +170,9 @@ def process_command(command):
     else:
         print("Некорректный ввод. Попробуйте снова.")
 
-
 def on_connect(client, userdata, flags, rc):
     print("Connected with result code " + str(rc))
+
 
 def play_sound(file_path):
     data, samplerate = sf.read(file_path, dtype='float32')
