@@ -27,6 +27,7 @@ SIM_NAME = int(config['DICT']['sim_name'])
 SIM_LOCATION = int(config['DICT']['sim_location'])
 SIM_ACTION = int(config['DICT']['sim_action'])
 SOUND_WAKE = config['SOUNDS']['sound_wake']
+SOUND_COMMAND_DONE = config['SOUNDS']['sound_command_done']
 SOUND_COMMAND_END = config['SOUNDS']['sound_command_end']
 
 # Словарь для фразы активации
@@ -134,6 +135,7 @@ def send_command(device_name, location, full_topic, action):
     if device_name and location and full_topic and action:
         print(f"Топик: {full_topic}")
         mqtt_client.publish(full_topic, action)
+        play_sound(SOUND_COMMAND_DONE)
         print(f"Отправлена команда: {action} на {device_name} в {location}.")
 
 def process_command(command):
