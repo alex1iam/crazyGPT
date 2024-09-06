@@ -12,8 +12,8 @@ import vosk
 import json
 from dict import Device, devices, groups
 
-bot_token = '5400000033:AAiiiiiiiiiiiiiiiiii  # Замените на свой токен
-chat_id = '10000000042'  # Замените на свой ID чата
+bot_token = '5iiiii  # Замените на свой токен
+chat_id = '1000042'  # Замените на свой ID чата
 bot = telegram.Bot(token=bot_token)
 
 # Конфигурация
