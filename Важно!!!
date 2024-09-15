@@ -1,0 +1,89 @@
+Версия операционки Raspbian OS:
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+NAME="Debian GNU/Linux"
+VERSION_ID="12"
+VERSION="12 (bookworm)"
+VERSION_CODENAME=bookworm
+ID=debian
+
+код работает с вот этими зависимостями pip3:
+если поставить тот же python-telegram-bot больше 1.9, то он будет требовать переписать код 
+под асинхронные выражения asincio. Я на это тоже могу сказать много выражений
+
+aiohappyeyeballs    2.4.0
+aiosignal           1.3.1
+anyio               4.4.0
+attrs               24.2.0
+certifi             2022.9.24
+cffi                1.17.0
+chardet             5.1.0
+charset-normalizer  3.0.1
+click               8.1.3
+colorama            0.4.6
+colorzero           2.0
+configparser        7.1.0
+cryptography        38.0.4
+defusedxml          0.7.1
+distro              1.8.0
+dnspython           2.3.0
+filelock            3.15.4
+frozenlist          1.4.1
+fsspec              2024.6.1
+fuzzywuzzy          0.18.0
+gpg                 1.18.0
+gpiozero            2.0
+h11                 0.14.0
+h2                  4.1.0
+hpack               4.0.0
+httpcore            1.0.5
+httpx               0.27.2
+hyperframe          6.0.0
+idna                3.3
+Jinja2              3.1.4
+Levenshtein         0.25.1
+lgpio               0.2.2.0
+Markdown            3.4.1
+markdown-it-py      2.1.0
+MarkupSafe          2.1.5
+mdurl               0.1.2
+mpmath              1.3.0
+multidict           6.0.5
+networkx            3.3
+numpy               2.0.1
+paho-mqtt           2.1.0
+pigpio              1.78
+pip                 23.0.1
+pycparser           2.22
+pycryptodomex       3.11.0
+Pygments            2.14.0
+python-apt          2.6.0
+python-Levenshtein  0.25.1
+python-telegram-bot 1.9
+PyYAML              6.0
+rapidfuzz           3.9.6
+requests            2.28.1
+requests-toolbelt   0.10.1
+rfc3986             1.5.0
+rich                13.3.1
+RPi.GPIO            0.7.1a4
+setuptools          66.1.1
+six                 1.16.0
+smbus2              0.4.2
+sniffio             1.3.1
+SOAPpy-py3          0.52.30
+sounddevice         0.5.0
+soundfile           0.12.1
+spidev              3.5
+srt                 3.5.3
+ssh-import-id       5.10
+sympy               1.13.2
+toml                0.10.2
+torch               2.4.0
+tqdm                4.66.5
+typing_extensions   4.12.2
+urllib3             1.26.12
+vosk                0.3.45
+websockets          12.0
+wheel               0.38.4
+wstools-py3         0.54.5
+yarl                1.9.8
