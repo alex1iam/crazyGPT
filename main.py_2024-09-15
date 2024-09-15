@@ -1,0 +1,344 @@
+import paho.mqtt.client as mqtt
+from fuzzywuzzy import fuzz
+import sounddevice as sd
+import soundfile as sf
+import configparser
+import numpy as np
+import threading
+import telegram
+import asyncio
+import socket
+import queue
+import vosk
+import json
+import time
+from dict import Device, devices, groups
+
+# Чтение конфигураций
+config = configparser.ConfigParser()
+config.read('./settings.ini')
+
+IP = config['MQTT']['ip']
+PORT = int(config['MQTT']['port'])
+BOT_TOKEN = config['TELEGRAM']['bot_token']
+CHAT_ID = int(config['TELEGRAM']['chat_id'])
+WAKE_STRING = config['WAKE']['wake_string']
+WAKE_TIMER = int(config['WAKE']['wake_timer'])
+SIM_WAKE = int(config['DICT']['sim_wake'])
+SIM_NAME = int(config['DICT']['sim_name'])
+SIM_LOCATION = int(config['DICT']['sim_location'])
+SIM_ACTION = int(config['DICT']['sim_action'])
+SIM_GROUP = int(config['DICT']['sim_group'])
+SOUND_WAKE = config['SOUNDS']['sound_wake']
+SOUND_COMMAND_DONE = config['SOUNDS']['sound_command_done']
+SOUND_COMMAND_END = config['SOUNDS']['sound_command_end']
+
+# Создание бота с тайм-аутом
+def create_telegram_bot(token, timeout=5):
+    socket.setdefaulttimeout(timeout)  # Устанавливаем тайм-аут
+    try:
+        bot = telegram.Bot(token=token)
+        # Проверяем подключение
+        bot.getMe()  # Это вызовет API, и если нет интернета, будет исключение
+        return bot
+    except (telegram.error.TelegramError, socket.timeout) as e:
+        print(f"Ошибка подключения к Telegram: {e}")
+        return None
+
+# Конфигурация
+device_m = 1
+model = vosk.Model("model_stt/vosk-model-small-ru-0.22")
+samplerate = 44100
+q = queue.Queue()
+
+# Словарь для фразы активации
+wake_alias = (WAKE_STRING,)
+
+action = None
+location = None
+full_topic = None
+group_name = None
+device_name = None
+prev_topic_value = None
+
+# Инициализация клиента MQTT
+mqtt_client = mqtt.Client()
+mqtt_client.connect(IP, int(PORT), 60)
+
+
+def on_connect(client, userdata, flags, rc):
+    print("Connected with result code " + str(rc))
+    subscribe_to_status_topics()
+
+def subscribe_to_status_topics():
+    for device_info in devices.values():
+        for command_key in device_info.commands.keys():
+            status_topic = f"{device_info.main_topic}{command_key}{device_info.status}"
+            status_topic = status_topic.replace('//', '/')  # Замена двойных слешей на одинарные
+            mqtt_client.subscribe(status_topic)
+            print(f"Подписались на статус топик: {status_topic}")
+
+def on_message(client, userdata, message):
+    global prev_topic_value
+
+    curr_topic_value = message.payload.decode("utf-8")
+    if prev_topic_value != curr_topic_value:
+        prev_topic_value = curr_topic_value
+#        print(f"Получено сообщение в топик {message.topic}: {curr_topic_value}")
+#        print(f"Отправлено сообщение в чат: команда '{action}' на '{device_name}' в '{location}'")
+
+mqtt_client.on_connect = on_connect
+mqtt_client.on_message = on_message
+
+def execute_command_on_device(command):
+    action = None
+    location = None
+    full_topic = None
+    device_name = None
+
+    # Преобразуем команду в нижний регистр
+    command_lower = command.lower()
+    found_device = False  # Флаг для отслеживания, найдено ли устройство
+
+    # Сначала ищем устройства с именем из двух слов
+    for device_key, device_info in devices.items():
+        # Разбиваем имя устройства на две части: name1 и name2
+        device_name_parts = device_info.name.lower().split()
+
+        # Учитываем, что имя устройства может состоять не более чем из двух слов
+        name1 = device_name_parts[0]
+        name2 = device_name_parts[1] if len(device_name_parts) > 1 else None
+
+        device_location_lower = device_info.location.lower()
+
+        # Если имя состоит из двух слов, сначала сравниваем обе части
+        if name2:
+            score_name1 = fuzz.partial_ratio(name1, command_lower)
+            score_name2 = fuzz.partial_ratio(name2, command_lower)
+            print(f"Ищем устройство: {device_info.name} (местоположение: {device_info.location}, score_name1: {score_name1}, score_name2: {score_name2})")
+
+            # Если оба слова соответствуют порогу, проверяем местоположение
+            if score_name1 > SIM_NAME and score_name2 > SIM_NAME:
+                score_location = fuzz.partial_ratio(device_location_lower, command_lower)
+                print(f"score_location: {score_location}")
+
+                if score_location > SIM_LOCATION:
+                    device_name = device_info.name
+                    location = device_info.location
+                    print(f"Найдено устройство: '{device_name}' в '{location}'")
+                    found_device = True  # Устанавливаем флаг, что устройство найдено
+
+                    # Проверяем команды
+                    for command_key, command_options in device_info.commands.items():
+                        if isinstance(command_options, dict):
+                            for synonyms_tuple, action_value in command_options.items():
+                                if any(fuzz.partial_ratio(synonym, command_lower) > SIM_ACTION for synonym in synonyms_tuple):
+                                    action = action_value  # Устанавливаем действие
+                                    full_topic = f"{device_info.main_topic}{command_key}{device_info.sending}"
+                                    return device_name, location, full_topic, action
+
+    # Если устройства с именем из двух слов не найдены, ищем устройства с именем из одного слова
+    if not found_device:
+        for device_key, device_info in devices.items():
+            device_name_parts = device_info.name.lower().split()
+
+            # Берем только первое слово для проверки
+            name1 = device_name_parts[0]
+            device_location_lower = device_info.location.lower()
+
+            # Сравниваем первое слово
+            score_name1 = fuzz.partial_ratio(name1, command_lower)
+            print(f"Ищем устройство: {device_info.name} (местоположение: {device_info.location}, score_name1: {score_name1})")
+
+            if score_name1 > SIM_NAME:
+                score_location = fuzz.partial_ratio(device_location_lower, command_lower)
+                print(f"score_location: {score_location}")
+
+                if score_location > SIM_LOCATION:
+                    device_name = device_info.name
+                    location = device_info.location
+                    print(f"Найдено устройство: '{device_name}' в '{location}'")
+                    found_device = True  # Устанавливаем флаг, что устройство найдено
+
+                    # Проверяем команды
+                    for command_key, command_options in device_info.commands.items():
+                        if isinstance(command_options, dict):
+                            for synonyms_tuple, action_value in command_options.items():
+                                if any(fuzz.partial_ratio(synonym, command_lower) > SIM_ACTION for synonym in synonyms_tuple):
+                                    action = action_value  # Устанавливаем действие
+                                    full_topic = f"{device_info.main_topic}{command_key}{device_info.sending}"
+                                    return device_name, location, full_topic, action
+
+    if not found_device:
+        print("Команда не распознана для устройства.")
+        return None, None, None, None  # Явные значения для случая, когда нет совпадений
+
+def execute_command_on_group(command):
+    command_lower = command.lower()  # Приводим команду к нижнему регистру
+    group_name = None
+    global location
+
+    for group in groups.keys():
+        # Используем только имя группы для проверки, игнорируя местоположение
+        score_group = fuzz.partial_ratio(group.lower(), command_lower)
+        print(f"Ищем группу до совпадения: {group} (score_group: {score_group})")
+        # Устанавливаем порог для совпадения группы
+        if score_group > SIM_GROUP:
+            group_name = group
+            print(f"Найдена группа: '{group_name}', score_group: {score_group}")
+            break  # Выходим после первого совпадения
+
+    if group_name:
+        group_matched = False
+
+        for device_id in groups[group_name]:
+            device = devices[device_id]
+            device_activated = False
+
+            for command_key in device.commands.keys():
+                command_options = device.commands[command_key]
+
+                if not isinstance(command_options, dict):
+                    continue  # Если это не словарь, пропускаем
+
+                for command_phrase, mqtt_command in command_options.items():
+                    # Здесь мы рассматриваем только команды устройства
+                    if any(phrase in command_lower for phrase in command_phrase):
+                        full_topic = f"{device.main_topic}{command_key}{device.sending}"
+                        try:
+                            mqtt_client.publish(full_topic, mqtt_command)  # Отправляем команду устройству
+                            print(f"Устройство {device_id}: Топик {full_topic}, действие '{mqtt_command}'")
+
+                            # Отправляем сообщение в Telegram, если бот инициализирован
+                            if bot:  # Проверяем, что bot не равен None
+                                try:
+                                    bot.sendMessage(chat_id=CHAT_ID, text=f"На '{device.name}' в '{device.location}' отправлена команда '{mqtt_command}'")
+                                    print(f"Отправлено сообщение в чат: На '{device.name}' в '{device.location}' отправлена команда '{mqtt_command}'")
+                                except telegram.error.TelegramError as e:
+                                    print(f"Ошибка при отправке сообщения в Telegram: {e}")
+                            else:
+                                print("Бот не инициализирован. Сообщение в Telegram не отправлено.")
+
+                            group_matched = True
+                            device_activated = True
+                            break  # Если команда успешно выполнена, выходим из внутреннего цикла
+
+                        except Exception as e:
+                            print(f"Ошибка при отправке команды на устройство: {e}")
+
+            if device_activated:
+                continue
+
+        if not group_matched:
+            print(f"Команда не распознана для устройств в группе '{group_name}'.")
+    else:
+        print(f"Группа не найдена для команды: '{command}'")
+
+    return group_name is not None  # Возвращаем True, если группа найдена
+
+def process_command(command):
+    print("Команда: "+command)
+
+    # Сначала проверяем, существует ли команда для устройства
+    device_name, location, full_topic, action = execute_command_on_device(command)
+
+    if device_name and location and action and full_topic:
+        send_command(device_name, location, full_topic, action)  # Отправляем команду устройству
+    else:
+        print("Устройство не обнаружено. Проверяем наличие группы...")
+
+        # Проверяем, существует ли команда для группы
+        if not execute_command_on_group(command):
+            print("Команда не распознана для группы. Ничего не делаем.")
+
+# Функция для отправки команды
+def send_command(device_name, location, full_topic, action):
+    if device_name and location and full_topic and action:
+        # Отправляем команду через MQTT, даже если bot не инициализирован
+        try:
+            mqtt_client.publish(full_topic, action)  # Отправка команды через MQTT
+            print(f"Топик {full_topic}, действие '{action}'")
+            play_sound(SOUND_COMMAND_DONE)  # Воспроизведение звука
+        except Exception as e:
+            print(f"Ошибка при отправке команды в MQTT: {e}")
+
+        # Отправка сообщения в Telegram, если бот инициализирован
+        if bot:  # Проверяем, что bot не равен None
+            try:
+                bot.sendMessage(chat_id=CHAT_ID, text=f"На '{device_name}' в '{location}' отправлена команда '{action}'")
+                print(f"Отправлено сообщение в чат: На '{device_name}' в '{location}' отправлена команда '{action}'")
+            except Exception as e:
+                print(f"Ошибка при отправке сообщения в Telegram: {e}")
+        else:
+            print("Бот не инициализирован. Сообщение в Telegram не отправлено.")
+
+# Подключаем бота
+bot = create_telegram_bot(BOT_TOKEN)
+if bot is None:
+    print("Не удалось создать Telegram-бота из-за отсутствия подключения к интернету.")
+
+def play_sound(file_path):
+    data, samplerate = sf.read(file_path, dtype='float32')
+    sd.play(data, samplerate)
+
+def q_callback(indata, frames, time, status):
+    q.put(bytes(indata))
+
+def reset_command_mode():
+    global command_mode
+    command_mode = False
+    play_sound(SOUND_COMMAND_END)
+    print("Режим команды отключен.")
+
+def voice_listener():
+    global command_mode
+    command_mode = False  # Начинаем в режиме ожидания команды
+
+    with sd.RawInputStream(callback=q_callback, channels=1, samplerate=samplerate, device=device_m, dtype='int16'):
+        rec = vosk.KaldiRecognizer(model, samplerate)
+        print("Начало прослушивания...")
+        play_sound(SOUND_WAKE)
+
+        while True:
+            data = q.get()
+            if rec.AcceptWaveform(data):
+                result = json.loads(rec.Result())
+                res = result.get('text', '').strip().lower()
+
+                if res:
+                    print(f"Распознанная фраза: {res}")
+
+                    # Проверяем наличие фразы активации
+                    wake_found = False
+                    for alias in wake_alias:
+                        if alias in res:
+                            wake_found = True
+                            # Удаляем фразу активации из строки
+                            command = res.replace(alias, '').strip()
+                            break
+
+                    if wake_found:
+                        # Фраза активации найдена, включаем режим команды
+                        play_sound(SOUND_WAKE)  # Воспроизводим сигнал
+                        command_mode = True
+                        print("Фраза активации обнаружена. Теперь ожидаем команду...")
+                        threading.Timer(WAKE_TIMER, reset_command_mode).start()
+
+                        if command:
+                            print(f"Обработка команды: {command}")
+                            process_command(command)  # Передаем оставшуюся строку как команду
+                    elif command_mode:
+                        # В режиме команды, если команда уже активна, продолжаем обработку
+                        print(f"Режим команды активен, обрабатываем: {res}")
+                        process_command(res)  # Обрабатываем полный текст как команду
+
+if __name__ == "__main__":
+    mqtt_client.loop_start()
+
+    try:
+        voice_listener()  # Начинаем прослушивание
+    except KeyboardInterrupt:
+        print("Завершение работы...")
+    finally:
+        mqtt_client.loop_stop()  # Останавливаем цикл обработки сообщений
+        mqtt_client.disconnect()  # Разрывает соединение
