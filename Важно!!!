@@ -1,3 +1,8 @@
+Используется три файла - main.py (основной скрипт), dict.py (содержит оборудование и группы) и файл настроек settings.ini.
+У файлов в репозитории нужно убрать из имени дату. Одинаковые даты - эти файлы работают попарно
+Как настраивать микрофон взял отсюда: https://habr.com/ru/companies/timeweb/articles/772080
+Настройка ПО и vosk: https://habr.com/ru/companies/timeweb/articles/817929/
+
 Версия операционки Raspbian OS:
 PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
 NAME="Debian GNU/Linux"
